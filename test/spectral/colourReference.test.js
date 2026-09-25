@@ -51,8 +51,8 @@ function bbSample(T) {
 
 describe('stylised emitters hit their target Y within 1%', () => {
   it.each([
-    ['fireball', EMIT_FIREBALL, 10000, 20],
-    ['burst', EMIT_BURST, 6000, 6],
+    ['fireball', EMIT_FIREBALL, 10000, 200],
+    ['burst', EMIT_BURST, 6000, 60],
     ['sun disk', SUN_DISK_SCALE, 5778, 20],
   ])('%s', (_, scale, T, target) => {
     expect(Math.abs(scale * bbSample(T)[1] / target - 1)).toBeLessThan(0.01)

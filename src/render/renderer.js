@@ -4,12 +4,15 @@ import lightingWgsl from './wgsl/lighting.wgsl?raw'
 import objectWgsl from './wgsl/object.wgsl?raw'
 import skyWgsl from './wgsl/sky.wgsl?raw'
 import presentWgsl from './wgsl/present.wgsl?raw'
+import bloomWgsl from './wgsl/bloom.wgsl?raw'
+import adaptWgsl from './wgsl/adapt.wgsl?raw'
+import shadowWgsl from './wgsl/shadow.wgsl?raw'
 import { C } from '../physics/constants.js'
 import { dot, sub, lengthSq } from '../math/vec3.js'
 import { lookDirection } from '../math/orient.js'
-import { perspectiveReversedInfinite, invert, viewRotation } from '../math/mat4.js'
+import { perspectiveReversedInfinite, orthoReversed, invert, multiply, viewRotation } from '../math/mat4.js'
 import {
-  LUT_SIZE, SUN_BANDS, EMIT_FIREBALL, EMIT_BURST, SUN_DISK_SCALE, THERMAL_EPS, THERMAL_T,
+  LUT_SIZE, SUN_BANDS, EMIT_FIREBALL, EMIT_BURST, FIREBALL_T, SUN_DISK_SCALE, THERMAL_EPS, THERMAL_T,
   buildBandLUT, buildBlackbodyLUT, buildBbBandsLUT, skyBands,
 } from '../spectral/lut.js'
 import { rgbToBands } from '../spectral/rgb.js'
@@ -31,6 +34,11 @@ const SUN_DIR = (() => {
   return v.map((x) => x / l)
 })()
 const BIG = 1e30
+const MAX_LIGHTS = 16
+const LIGHT_GAIN = 0.3 // stylised: fireball light on the terrain (decision 10)
+const BLOOM_LEVELS = 6
+const BLOOM_STRENGTH = 0.06
+const LIGHT_BYTES = 48
 const NO_BURST = 0xffffffff
 
 export class WebGPUUnavailableError extends Error {}
@@ -64,28 +72,42 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
   const objBuf = device.createBuffer({ size: OBJ_BYTES * MAX_OBJECTS, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
   const burstBuf = device.createBuffer({ size: 16 * MAX_BURST_VELS, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
   const presentBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+  const lightBuf = device.createBuffer({ size: LIGHT_BYTES * MAX_LIGHTS, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
+  const adaptBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST })
+  const adaptParamBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+  const adaptReadBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST })
+  const linearSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+  const shadowSamp = device.createSampler({ compare: 'greater-equal', magFilter: 'linear', minFilter: 'linear' })
+  const shadowSize = quality === 'low' ? 2048 : 8192
+  const shadowTex = device.createTexture({ size: [shadowSize, shadowSize], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
 
   const sceneLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+      { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
       { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+      { binding: 7, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+      { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
     ],
   })
-  const sceneGroup = device.createBindGroup({
-    layout: sceneLayout,
-    entries: [
+  const dummyDepth = device.createTexture({ size: [1, 1], format: 'depth32float', usage: GPUTextureUsage.TEXTURE_BINDING })
+  const sceneEntries = (depthView) => [
       { binding: 0, resource: { buffer: frameBuf } },
       { binding: 1, resource: { buffer: objBuf } },
       { binding: 2, resource: { buffer: burstBuf } },
       { binding: 3, resource: bandTex.createView() },
       { binding: 4, resource: bbTex.createView() },
       { binding: 5, resource: bbBandsTex.createView() },
-    ],
-  })
+      { binding: 6, resource: depthView },
+      { binding: 7, resource: shadowSamp },
+      { binding: 8, resource: { buffer: lightBuf } },
+    ]
+  const sceneGroup = device.createBindGroup({ layout: sceneLayout, entries: sceneEntries(shadowTex.createView()) })
+  const shadowPassGroup = device.createBindGroup({ layout: sceneLayout, entries: sceneEntries(dummyDepth.createView()) })
   const scenePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
 
   const module = (code, label) => {
@@ -98,6 +120,9 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
   const objectModule = module(commonWgsl + relativityWgsl + lightingWgsl + objectWgsl, 'object')
   const skyModule = module(commonWgsl + relativityWgsl + skyWgsl, 'sky')
   const presentModule = module(presentWgsl, 'present')
+  const bloomModule = module(bloomWgsl, 'bloom')
+  const adaptModule = module(adaptWgsl, 'adapt')
+  const shadowModule = module(commonWgsl + shadowWgsl, 'shadow')
 
   const vertexLayout = {
     arrayStride: VERTEX_STRIDE,
@@ -126,10 +151,41 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'always' },
     multisample: { count: MSAA },
   })
+  const shadowPipeline = device.createRenderPipeline({
+    layout: scenePipelineLayout,
+    vertex: { module: shadowModule, entryPoint: 'vs', buffers: [vertexLayout] },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
+  })
+  const bloomLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    ],
+  })
+  const bloomPipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bloomLayout] })
+  const bloomDown = device.createRenderPipeline({
+    layout: bloomPipelineLayout,
+    vertex: { module: bloomModule, entryPoint: 'vs' },
+    fragment: { module: bloomModule, entryPoint: 'down', targets: [{ format: HDR_FORMAT }] },
+  })
+  const bloomUp = device.createRenderPipeline({
+    layout: bloomPipelineLayout,
+    vertex: { module: bloomModule, entryPoint: 'vs' },
+    fragment: {
+      module: bloomModule, entryPoint: 'up',
+      targets: [{ format: HDR_FORMAT, blend: { color: { srcFactor: 'one', dstFactor: 'one' }, alpha: { srcFactor: 'one', dstFactor: 'one' } } }],
+    },
+  })
+  const adaptPipeline = device.createComputePipeline({ layout: 'auto', compute: { module: adaptModule, entryPoint: 'main' } })
   const presentLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
     ],
   })
   const presentPipeline = device.createRenderPipeline({
@@ -198,7 +254,8 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
 
   // --- render targets ---
   let size = [0, 0]
-  let msaaTex, depthTex, hdrTex, presentGroup
+  let msaaTex, depthTex, hdrTex, bloomTex, presentGroup, adaptGroup
+  let bloomPasses = []
   const ensureTargets = () => {
     const dpr = quality === 'low' ? 1 : devicePixelRatio
     const w = Math.max(1, Math.floor(canvas.clientWidth * dpr))
@@ -207,15 +264,78 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     size = [w, h]
     canvas.width = w
     canvas.height = h
-    for (const t of [msaaTex, depthTex, hdrTex]) t?.destroy()
+    for (const t of [msaaTex, depthTex, hdrTex, bloomTex]) t?.destroy()
     msaaTex = device.createTexture({ size, format: HDR_FORMAT, sampleCount: MSAA, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     depthTex = device.createTexture({ size, format: 'depth32float', sampleCount: MSAA, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     hdrTex = device.createTexture({ size, format: HDR_FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+    const bw = Math.max(1, w >> 1)
+    const bh = Math.max(1, h >> 1)
+    bloomTex = device.createTexture({
+      size: [bw, bh], format: HDR_FORMAT, mipLevelCount: BLOOM_LEVELS,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    })
+    const mip = (level) => bloomTex.createView({ baseMipLevel: level, mipLevelCount: 1 })
+    const mipSize = (level) => [Math.max(1, bw >> level), Math.max(1, bh >> level)]
+    const pass = (pipeline, src, srcSize, dst, karis, additive) => {
+      const ubuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+      device.queue.writeBuffer(ubuf, 0, new Float32Array([1 / srcSize[0], 1 / srcSize[1], karis ? 1 : 0, 1]))
+      const group = device.createBindGroup({
+        layout: bloomLayout,
+        entries: [{ binding: 0, resource: src }, { binding: 1, resource: linearSamp }, { binding: 2, resource: { buffer: ubuf } }],
+      })
+      return { pipeline, group, dst, additive }
+    }
+    bloomPasses = [pass(bloomDown, hdrTex.createView(), size, mip(0), true, false)]
+    for (let l = 1; l < BLOOM_LEVELS; l++) bloomPasses.push(pass(bloomDown, mip(l - 1), mipSize(l - 1), mip(l), false, false))
+    for (let l = BLOOM_LEVELS - 1; l >= 1; l--) bloomPasses.push(pass(bloomUp, mip(l), mipSize(l), mip(l - 1), false, true))
     presentGroup = device.createBindGroup({
       layout: presentLayout,
-      entries: [{ binding: 0, resource: { buffer: presentBuf } }, { binding: 1, resource: hdrTex.createView() }],
+      entries: [
+        { binding: 0, resource: { buffer: presentBuf } },
+        { binding: 1, resource: hdrTex.createView() },
+        { binding: 2, resource: mip(0) },
+        { binding: 3, resource: linearSamp },
+        { binding: 4, resource: { buffer: adaptBuf } },
+      ],
+    })
+    adaptGroup = device.createBindGroup({
+      layout: adaptPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: mip(2) },
+        { binding: 1, resource: { buffer: adaptBuf } },
+        { binding: 2, resource: { buffer: adaptParamBuf } },
+      ],
     })
   }
+
+  // --- static sun shadow map (world frame; rendered once per island) ---
+  const shadowViewProj = (() => {
+    const sun = { x: SUN_DIR[0], y: SUN_DIR[1], z: SUN_DIR[2] }
+    const rot = viewRotation({ x: -sun.x, y: -sun.y, z: -sun.z })
+    const translate = Float32Array.from([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -300 * sun.x, -300 * sun.y, -300 * sun.z, 1])
+    return multiply(orthoReversed(-130, 130, -130, 130, 1, 600), multiply(rot, translate))
+  })()
+  const renderShadowMap = () => {
+    fd.set(shadowViewProj, 108)
+    fu[106] = 1
+    device.queue.writeBuffer(frameBuf, 0, frameData)
+    const encoder = device.createCommandEncoder()
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: { view: shadowTex.createView(), depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 0 },
+    })
+    pass.setPipeline(shadowPipeline)
+    pass.setBindGroup(0, shadowPassGroup)
+    for (const mesh of staticMeshes.slice(0)) {
+      if (mesh === staticMeshes[1]) continue // water casts no shadow
+      pass.setVertexBuffer(0, mesh.vbuf)
+      pass.setIndexBuffer(mesh.ibuf, 'uint32')
+      pass.drawIndexed(mesh.count)
+    }
+    pass.end()
+    device.queue.submit([encoder.finish()])
+  }
+  renderShadowMap()
 
   // --- per-frame object records ---
   const objData = new ArrayBuffer(OBJ_BYTES * MAX_OBJECTS)
@@ -255,8 +375,36 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     od[o + 15] = C * C - lengthSq(u)
   }
 
+  const lightData = new ArrayBuffer(LIGHT_BYTES * MAX_LIGHTS)
+  const ld = new Float32Array(lightData)
+  const writeLights = (fireballs, tObs, obsPos) => {
+    const near = fireballs
+      .map((f) => ({ f, d: Math.hypot(...['x', 'y', 'z'].map((k) => f.line.positionAt(Math.min(tObs, f.line.tDeath))[k] - obsPos[k])) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, MAX_LIGHTS)
+    near.forEach(({ f }, i) => {
+      const { line } = f
+      const o = (i * LIGHT_BYTES) / 4
+      ld.set([line.p.x, line.p.y, line.p.z, tObs - line.t0, line.u.x, line.u.y, line.u.z,
+        Number.isFinite(line.tBirth) ? line.tBirth - tObs : -BIG,
+        FIREBALL_T, EMIT_FIREBALL * LIGHT_GAIN, C * C - lengthSq(line.u),
+        Number.isFinite(line.tDeath) ? line.tDeath - tObs : BIG], o)
+    })
+    if (near.length) device.queue.writeBuffer(lightBuf, 0, lightData, 0, near.length * LIGHT_BYTES)
+    return near.length
+  }
+
+  let lastRender = performance.now()
+  let exposureLog2 = Math.log2(0.8)
+  let reading = false
+  let boostKick = 0
+  let wasBoosting = false
+
   const render = (view) => {
     ensureTargets()
+    const now = performance.now()
+    const dReal = Math.min((now - lastRender) / 1000, 0.1)
+    lastRender = now
     const tObs = view.worldTime
     const { observer } = view
     writeStatic()
@@ -274,6 +422,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     const fbBase = next
     for (const f of fireballs) writeObject(next++, f, tObs, NO_BURST)
     if (fireballs.length) draws.push([fireballMesh, fbBase, fireballs.length])
+    const nLights = writeLights(fireballs, tObs, observer.pos)
     const bursts = view.objects.filter((o) => o.kind === 'burst').slice(0, MAX_BURST_VELS / 16)
     const bBase = next
     bursts.forEach((b, k) => {
@@ -299,13 +448,19 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     fd[55] = 1 / Math.sqrt(1 - dot(observer.vel, observer.vel) / (C * C))
     const fl = view.flags
     fd.set([fl.aberration ? 1 : 0, fl.delay ? 1 : 0, fl.doppler ? 1 : 0, fl.searchlight ? 1 : 0], 60)
-    fu[104] = 0
-    fu[105] = 0
-    fu[106] = 0
+    fu[104] = nLights
+    fu[105] = targetsObj.filter((t) => targetMeshes.has(t.id)).length
     device.queue.writeBuffer(frameBuf, 0, frameData)
 
     const headroom = hdr ? view.settings?.headroom ?? 8 : 1
-    device.queue.writeBuffer(presentBuf, 0, new Float32Array([0.8, headroom, hdr ? 0 : 1, 0.15, 0, 0, 0, 0]))
+    if (view.boost && !wasBoosting) boostKick = 0.25
+    wasBoosting = view.boost
+    boostKick = Math.max(0, boostKick - dReal)
+    const kick = boostKick / 0.25
+    const shake = [(Math.random() - 0.5) * 4 * kick, (Math.random() - 0.5) * 4 * kick]
+    const adaptOn = view.settings?.adaptation ?? true
+    device.queue.writeBuffer(presentBuf, 0, new Float32Array([0.8, headroom, hdr ? 0 : 1, 0.15 + 0.2 * kick, ...shake, adaptOn ? 1 : 0, BLOOM_STRENGTH]))
+    device.queue.writeBuffer(adaptParamBuf, 0, new Float32Array([dReal, view.resetAdaptation ? 1 : 0, size[0] / size[1], 0]))
 
     const encoder = device.createCommandEncoder()
     const pass = encoder.beginRenderPass({
@@ -327,6 +482,23 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
       pass.drawIndexed(mesh.count, count, 0, 0, first)
     }
     pass.end()
+    const runBloom = (bp) => {
+      const bpass = encoder.beginRenderPass({
+        colorAttachments: [{ view: bp.dst, loadOp: bp.additive ? 'load' : 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }],
+      })
+      bpass.setPipeline(bp.pipeline)
+      bpass.setBindGroup(0, bp.group)
+      bpass.draw(3)
+      bpass.end()
+    }
+    bloomPasses.filter((bp) => !bp.additive).forEach(runBloom)
+    // measure the pure downsampled scene before the upsample passes add blur into the mips
+    const cpass = encoder.beginComputePass()
+    cpass.setPipeline(adaptPipeline)
+    cpass.setBindGroup(0, adaptGroup)
+    cpass.dispatchWorkgroups(1)
+    cpass.end()
+    bloomPasses.filter((bp) => bp.additive).forEach(runBloom)
     const out = encoder.beginRenderPass({
       colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }],
     })
@@ -334,8 +506,27 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     out.setBindGroup(0, presentGroup)
     out.draw(3)
     out.end()
+    const readNow = !reading
+    if (readNow) encoder.copyBufferToBuffer(adaptBuf, 0, adaptReadBuf, 0, 16)
     device.queue.submit([encoder.finish()])
+    if (readNow) {
+      reading = true
+      adaptReadBuf.mapAsync(GPUMapMode.READ).then(() => {
+        exposureLog2 = new Float32Array(adaptReadBuf.getMappedRange())[0]
+        adaptReadBuf.unmap()
+        reading = false
+      })
+    }
   }
 
-  return { device, hdr, render, setIsland, get size() { return size } }
+  const replaceIsland = (isl, tgts) => {
+    setIsland(isl, tgts)
+    renderShadowMap()
+  }
+
+  return {
+    device, hdr, render, setIsland: replaceIsland,
+    exposure: () => 2 ** exposureLog2,
+    get size() { return size },
+  }
 }
