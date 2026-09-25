@@ -6,6 +6,7 @@ import { createCaptions } from './ui/captions.js'
 import { createMapOverlay } from './ui/mapOverlay.js'
 import { createSettings, settingsFromUrl } from './ui/settings.js'
 import { applyScenario } from './scenarios.js'
+import { createAudio } from './audio/engine.js'
 
 const params = new URLSearchParams(location.search)
 const quality = params.get('quality') === 'low' ? 'low' : 'high'
@@ -40,7 +41,9 @@ async function boot() {
   const urlSettings = settingsFromUrl(params)
   if (urlSettings) input.pushSettings(urlSettings)
   status.textContent = 'Click to play'
-  overlay.addEventListener('click', () => input.requestLock())
+  const audio = createAudio()
+  overlay.addEventListener('click', () => { audio.start(); input.requestLock() })
+  canvas.addEventListener('click', () => audio.start())
   document.addEventListener('pointerlockchange', () => { overlay.hidden = input.locked() || freeze })
   if (freeze) overlay.hidden = true
 
@@ -71,6 +74,7 @@ async function boot() {
     captions.update(state)
     minimap.update(state)
     settingsPanel.update(state)
+    audio.update(state)
     requestAnimationFrame(frame)
   }
   requestAnimationFrame(frame)

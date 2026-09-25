@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import commonWgsl from '../../src/render/wgsl/common.wgsl?raw'
 import relativityWgsl from '../../src/render/wgsl/relativity.wgsl?raw'
 import { C } from '../../src/physics/constants.js'
-import { apparent } from '../../src/physics/lightcone.js'
+import { apparent, retardedDelay } from '../../src/physics/lightcone.js'
 import { mulberry32, randomDir } from '../physics/rng.js'
 import { getDevice, packFrame, packObjects, runCompute, uniform, storage } from './gpuHarness.js'
 
@@ -57,6 +57,20 @@ function makeVertices(seed, obsPos) {
   return vs
 }
 
+// dopplerD evaluates 1 − v·k̂/C in float32. When v·k̂ → C that difference cancels, and an input rounding of
+// ~1 ulp in v·k̂/C becomes a relative error of κ = (|v·k̂|/C) / (1 − v·k̂/C) ulps in D (κ ≈ 2000 for a source
+// approaching head-on at 0.9995C, D ≈ 63). The tolerance adds 2 ulp (2^-22) × κ for source and observer.
+const kappa = (v, k) => {
+  const b = (v.x * k.x + v.y * k.y + v.z * k.z) / C
+  return Math.abs(b) / (1 - b)
+}
+function kHatOf(v, obs, flags) {
+  const r = add(add(add(v.origin, v.local), mul(v.vel, v.dt0)), mul(obs.pos, -1))
+  const dx = add(r, mul(v.vel, -(flags.delay ? retardedDelay(r, v.vel) : 0)))
+  const len = Math.hypot(dx.x, dx.y, dx.z)
+  return len < 1e-4 ? { x: 0, y: 0, z: 0 } : mul(dx, -1 / len)
+}
+
 const OBSERVERS = [
   { name: 'observer at rest', pos: { x: 12.5, y: 1.75, z: -30.25 }, vel: { x: 0, y: 0, z: 0 } },
   { name: 'observer at 0.8C', pos: { x: -40, y: 2, z: 7.5 }, vel: fv(mul({ x: 0.6, y: 0, z: -0.8 }, 0.8 * C)) },
@@ -87,11 +101,13 @@ describe('relativity.wgsl apparent() parity with lightcone.js', () => {
         }))
         const observer = { x: obs.pos, v: obs.vel }
         let visibleChecked = 0
+        let refVisible = 0
         let worstPos = 0
         let worstD = 0
         for (let i = 0; i < N; i++) {
           const v = verts[i]
           const ref = apparent({ ...v, p: add(v.origin, v.local), u: v.vel }, observer, flags)
+          if (ref.visible) refVisible++
           const g = out.subarray(i * 8, i * 8 + 8)
           const ctx = `vertex ${i} ${JSON.stringify(v)}`
 
@@ -102,10 +118,11 @@ describe('relativity.wgsl apparent() parity with lightcone.js', () => {
           worstPos = Math.max(worstPos, err / tol)
           expect(err, `pos ${ctx}`).toBeLessThanOrEqual(tol)
 
-          // Doppler factor: relative 1e-4.
+          // Doppler factor: relative 1e-4, widened by the float32 conditioning of the two (1 − v·k̂/C) factors.
+          const dTol = 1e-4 + 2 ** -22 * (kappa(v.vel, kHatOf(v, obs, flags)) + kappa(obs.vel, kHatOf(v, obs, flags)))
           const dErr = Math.abs(g[3] - ref.D) / ref.D
-          worstD = Math.max(worstD, dErr / 1e-4)
-          expect(dErr, `D gpu=${g[3]} ref=${ref.D} ${ctx}`).toBeLessThanOrEqual(1e-4)
+          worstD = Math.max(worstD, dErr / dTol)
+          expect(dErr, `D gpu=${g[3]} ref=${ref.D} ${ctx}`).toBeLessThanOrEqual(dTol)
 
           // Visibility: exact, unless tRel is within 1e-5 s of a window edge.
           const tRel = g[5]
@@ -116,6 +133,8 @@ describe('relativity.wgsl apparent() parity with lightcone.js', () => {
           }
         }
         expect(visibleChecked).toBeGreaterThan(N - 5)
+        expect(refVisible).toBeGreaterThan(N / 2) // both outcomes occur
+        expect(refVisible).toBeLessThan(N)
         console.log(`${obs.name} ${JSON.stringify(flags)}: worst pos err/tol ${worstPos.toFixed(3)}, worst D err/tol ${worstD.toFixed(3)}`)
       })
     }

@@ -112,6 +112,5 @@ describe('round trip', () => {
       checked++
     }
     expect(maxErr).toBeLessThan(1e-4)
-    console.log("max apparent error", maxErr)
   })
 })
