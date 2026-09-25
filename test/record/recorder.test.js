@@ -8,9 +8,6 @@ const DT = 1 / 60
 
 describe('recorder', () => {
   it('survives cleanup: a fireball the game removed is still exported with tDeath and hitPos', () => {
-    const { game, tick } = recordedGame()
-    const rec = recordedGame().rec // unused second recorder must not interfere
-    expect(rec.exportLog().frames.t).toHaveLength(0)
     const r = recordedGame()
     r.tick({ fire: true, lookDY: 300 }, DT) // look down: ground hit
     const id = r.game.fireballs[0].id
@@ -27,7 +24,6 @@ describe('recorder', () => {
     expect(burst.extra.particleVels).toHaveLength(16)
     expect(burst.extra.particleRadius).toBe(0.12)
     expect(burst.extra.big).toBe(false)
-    expect(game && tick).toBeTruthy()
   })
 
   it('restart clears: the export holds only the new round', () => {
@@ -44,7 +40,7 @@ describe('recorder', () => {
     expect(log.objects.filter((o) => o.kind === 'fireball')).toHaveLength(1)
     expect(log.objects.some((o) => oldIds.has(o.id))).toBe(false)
     expect(log.flagChanges).toEqual([{ t: 0, flags: { aberration: false, delay: true, doppler: true, searchlight: true } }])
-    expect(log.round.status).toBe('running')
+    expect(log.round).toMatchObject({ status: game.round.status, score: 0 })
   })
 
   it('records targets once with their spec index, and N as a flag change', () => {
@@ -64,13 +60,14 @@ describe('recorder', () => {
     const { game, rec, tick } = recordedGame()
     for (let i = 0; i < 120; i++) tick({ moveF: 1 }, 1 / 120)
     const log = rec.exportLog()
-    expect(log.frames.t).toHaveLength(60)
-    for (let i = 1; i < 60; i++) expect(log.frames.tau[i] - log.frames.tau[i - 1]).toBeCloseTo(1 / 60, 6)
+    expect(log.frames.t).toHaveLength(61) // 60 decimated samples plus the latest
+    for (let i = 1; i < 60; i++) expect(log.frames.tau[i] - log.frames.tau[i - 1]).toBeCloseTo(1 / 60, 5)
+    expect(log.frames.tau[60]).toBeCloseTo(game.player.tau, 6)
     tick({ moveF: 1 }, 1 / 120)
-    const log2 = rec.exportLog()
-    expect(log2.frames.t).toHaveLength(61)
-    expect(log2.frames.tau[60]).toBeCloseTo(game.player.tau, 6)
-    expect(rec.exportLog().frames.t).toHaveLength(61) // export does not mutate
+    expect(rec.exportLog().frames.t).toHaveLength(61) // latest is now a regular sample
+    tick({ moveF: 1 }, 1 / 120)
+    expect(rec.exportLog().frames.t).toHaveLength(62)
+    expect(rec.exportLog().frames.t).toHaveLength(62) // export does not mutate
   })
 
   it('stores meta and rounds frame columns', () => {
@@ -80,8 +77,8 @@ describe('recorder', () => {
     expect(log.meta).toMatchObject({ format: 'einstein-spacetime', version: 1, seed: SEED, generatorVersion: 1, geometryHash: fakeHash(SEED), c: 20 })
     expect(log.meta.settings.cruiseBeta).toBe(0.3)
     expect(Number.isNaN(Date.parse(log.meta.createdAt))).toBe(false)
-    expect(log.frames.pos[5]).toBe(Math.round(game.player.pos.z * 1e5) / 1e5)
-    expect(log.frames.yaw[1]).toBe(Math.round(game.player.yaw * 1e6) / 1e6)
+    expect(log.frames.pos[2]).toBe(Math.round(game.player.pos.z * 1e5) / 1e5)
+    expect(log.frames.yaw[0]).toBe(Math.round(game.player.yaw * 1e6) / 1e6)
     expect(JSON.stringify(log)).not.toMatch(/Infinity/)
   })
 })

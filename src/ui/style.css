@@ -61,3 +61,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #hud .iris { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--neon); vertical-align: middle; margin-left: 6px; }
 @keyframes pulse { from { filter: drop-shadow(0 0 2px var(--neon2)); } to { filter: drop-shadow(0 0 10px var(--neon2)); } }
 #hud { padding-right: 90px; }
+#replaybar {
+  position: fixed; left: 50%; top: 16px; transform: translateX(-50%); display: flex; gap: 14px; align-items: center;
+  padding: 8px 16px; background: var(--glass); border: 1px solid var(--neon2); backdrop-filter: blur(8px); z-index: 2;
+}
+#replaybar .badge { color: var(--neon2); font-weight: bold; letter-spacing: 0.15em; text-shadow: 0 0 8px var(--neon2); }
+#replaybar .scrub { width: 320px; accent-color: var(--neon2); }
+body.replaying #hud { display: none; }
