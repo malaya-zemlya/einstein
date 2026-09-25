@@ -103,8 +103,10 @@ export const SKY_K = 0.6 / skyRaw().reduce((acc, w, i) => acc + w * bandXYZ(i, 1
 export const skyBands = () => Float32Array.from(skyRaw(), (w) => w * SKY_K)
 
 // Stylised emitter scales (decision 10): multiply bb(T) so the source at rest hits a target Y.
-export const EMIT_FIREBALL = 4 / bbXYZ(3000)[1]
-export const EMIT_BURST = 2 / bbXYZ(2500)[1]
+export const FIREBALL_T = 10000
+export const BURST_T = 6000
+export const EMIT_FIREBALL = 20 / bbXYZ(FIREBALL_T)[1] // stylised: Y ≈ 20 at rest (≈ 4 receding at 0.7c)
+export const EMIT_BURST = 6 / bbXYZ(BURST_T)[1]
 export const SUN_DISK_SCALE = 20 / bbXYZ(T_SUN)[1]
 
 // Colour-space helpers (row-major 3×3, D65).

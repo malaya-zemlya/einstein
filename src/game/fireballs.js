@@ -1,3 +1,4 @@
+import { FIREBALL_TEMP } from '../world/targets.js'
 import { C } from '../physics/constants.js'
 import { velocityAdd } from '../physics/lorentz.js'
 import { Worldline } from '../physics/worldline.js'
@@ -12,7 +13,7 @@ export function tryFire(state, input) {
   const f = lookDirection(player.yaw, player.pitch)
   const u = velocityAdd(player.vel, scale(f, settings.fireballBeta * C))
   const line = new Worldline({ p: addScaled(player.pos, f, 0.5), t0: state.worldTime, u, tBirth: state.worldTime })
-  state.fireballs.push({ id: `f${state.nextId++}`, line, radius: 0.3, emitTemp: 3000 })
+  state.fireballs.push({ id: `f${state.nextId++}`, line, radius: 0.3, emitTemp: FIREBALL_TEMP })
   const alive = state.fireballs.filter((fb) => fb.line.tDeath === Infinity)
   if (alive.length > settings.maxFireballs) alive[0].line.tDeath = state.worldTime
   state.events.push({

@@ -12,10 +12,10 @@ export const TARGET_MAX_R = 80
 export const TARGET_MIN_HEIGHT = 1.0
 export const TARGET_PROP_CLEAR = 3.5 // keeps balloons out of tree canopies
 export const FIREBALL_RADIUS = 0.3
-export const FIREBALL_TEMP = 3000
+export const FIREBALL_TEMP = 10000 // hot plasma: still ~4200 K (orange-white) when receding at 0.7c
 export const BURST_PARTICLES = 16
 export const BURST_RADIUS = 0.12
-export const BURST_TEMP = 2500
+export const BURST_TEMP = 6000
 
 // Quality-independent target centres: [{pos, colour}].
 export function placeTargetSites(seed, island, n = 12) {
@@ -66,7 +66,7 @@ export function makeTargetGeometry(colour, maxEdge, bandsFor = materialBands) {
   ])
 }
 
-// Fireball: icosphere r 0.3, emitting at 3000 K, zero albedo.
+// Fireball: icosphere r 0.3, emitting at FIREBALL_TEMP, zero albedo.
 export function makeFireballGeometry(quality = 'high') {
   return sphere(FIREBALL_RADIUS, qualityOf(quality).propEdge, { emit: FIREBALL_TEMP, minFreq: 4 })
 }

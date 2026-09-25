@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BURST_TEMP,
   BALLOON_RADIUS, BURST_PARTICLES, FIREBALL_TEMP, TARGET_HEIGHT, makeBurstGeometry, makeFireballGeometry, placeTargets,
 } from '../../src/world/targets.js'
 import { BALLOON_COLOURS } from '../../src/world/palette.js'
@@ -57,7 +58,7 @@ describe('targets', () => {
     for (const q of ['low', 'high']) {
       const b = makeBurstGeometry(q)
       expectConsistent(expect, b)
-      expect(b.emitTemp.every((t) => t === 2500)).toBe(true)
+      expect(b.emitTemp.every((t) => t === BURST_TEMP)).toBe(true)
       expect(new Set(b.particle).size).toBe(BURST_PARTICLES)
       expect(Math.max(...b.particle)).toBe(15)
       for (let k = 0; k < b.positions.length; k += 3) expect(Math.hypot(b.positions[k], b.positions[k + 1], b.positions[k + 2])).toBeCloseTo(0.12, 6)

@@ -37,12 +37,12 @@ async function boot() {
   document.addEventListener('pointerlockchange', () => { overlay.hidden = input.locked() || freeze })
   if (freeze) overlay.hidden = true
 
-  const debug = { pause: false, view: null }
+  const debug = { pause: false, view: null, input: null }
   let last = performance.now()
   const frame = (now) => {
     const dReal = Math.min((now - last) / 1000, 1 / 30)
     last = now
-    const snap = input.snapshot()
+    const snap = { ...input.snapshot(), ...(debug.input ?? {}) }
     if (!debug.pause) step(state, snap, dReal, { devMode })
     renderer.render(debug.view ? debug.view(viewOf(state)) : viewOf(state))
     state.flagsDirty.adaptation = false
