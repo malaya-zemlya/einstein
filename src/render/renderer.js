@@ -43,6 +43,20 @@ const NO_BURST = 0xffffffff
 
 export class WebGPUUnavailableError extends Error {}
 
+export const MAP_HALF_EXTENT = 100
+
+// World (x, z) → normalised mini-map coordinates in [0, 1] (north = −z at the top).
+export const mapProject = (x, z) => [(x / MAP_HALF_EXTENT + 1) / 2, (z / MAP_HALF_EXTENT + 1) / 2]
+
+function halfToFloat(h) {
+  const s = h & 0x8000 ? -1 : 1
+  const e = (h >> 10) & 0x1f
+  const f = h & 0x3ff
+  if (e === 0) return s * 2 ** -14 * (f / 1024)
+  if (e === 31) return f ? NaN : s * Infinity
+  return s * 2 ** (e - 15) * (1 + f / 1024)
+}
+
 export async function createRenderer(canvas, island, { quality = 'high', targets = [] } = {}) {
   if (!navigator.gpu) throw new WebGPUUnavailableError('WebGPU is not available in this browser')
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
@@ -143,6 +157,13 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     primitive: { topology: 'triangle-list', cullMode: 'none' },
     depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
     multisample: { count: MSAA },
+  })
+  const mapPipeline = device.createRenderPipeline({
+    layout: scenePipelineLayout,
+    vertex: { module: objectModule, entryPoint: 'vs', buffers: [vertexLayout] },
+    fragment: { module: objectModule, entryPoint: 'fs', targets: [{ format: HDR_FORMAT }] },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
   })
   const skyPipeline = device.createRenderPipeline({
     layout: scenePipelineLayout,
@@ -519,13 +540,67 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     }
   }
 
-  const replaceIsland = (isl, tgts) => {
+  // One-time overhead rest-frame image of the static island for the mini-map (decision 19).
+  const MAP_PX = 1024
+  const renderMapImage = async () => {
+    const color = device.createTexture({ size: [MAP_PX, MAP_PX], format: HDR_FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
+    const depth = device.createTexture({ size: [MAP_PX, MAP_PX], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    const saved = frameData.slice(0)
+    fd.set(orthoReversed(-MAP_HALF_EXTENT, MAP_HALF_EXTENT, -MAP_HALF_EXTENT, MAP_HALF_EXTENT, 1, 400), 0)
+    fd.set(Float32Array.from([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]), 32) // looking down −y, north (−z) up
+    fd.set([0, 150, 0, C, 0, 0, 0, 1], 48)
+    fd.set([0, 0, 0, 0], 60)
+    fu[104] = 0
+    fu[105] = 0
+    writeStatic()
+    device.queue.writeBuffer(objBuf, 0, objData, 0, OBJ_BYTES)
+    device.queue.writeBuffer(frameBuf, 0, frameData)
+    const readBuf = device.createBuffer({ size: MAP_PX * MAP_PX * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
+    const encoder = device.createCommandEncoder()
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{ view: color.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0.02, 0.05, 0.1, 1] }],
+      depthStencilAttachment: { view: depth.createView(), depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 0 },
+    })
+    pass.setPipeline(mapPipeline)
+    pass.setBindGroup(0, sceneGroup)
+    for (const mesh of staticMeshes) {
+      pass.setVertexBuffer(0, mesh.vbuf)
+      pass.setIndexBuffer(mesh.ibuf, 'uint32')
+      pass.drawIndexed(mesh.count)
+    }
+    pass.end()
+    encoder.copyTextureToBuffer({ texture: color }, { buffer: readBuf, bytesPerRow: MAP_PX * 8 }, [MAP_PX, MAP_PX])
+    device.queue.submit([encoder.finish()])
+    new Uint8Array(frameData).set(new Uint8Array(saved))
+    await readBuf.mapAsync(GPUMapMode.READ)
+    const half = new Uint16Array(readBuf.getMappedRange())
+    const img = new ImageData(MAP_PX, MAP_PX)
+    for (let i = 0; i < MAP_PX * MAP_PX; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = halfToFloat(half[4 * i + c]) * 0.8
+        const t = v / (1 + v)
+        img.data[4 * i + c] = Math.round(255 * Math.max(0, Math.min(1, t <= 0.0031308 ? 12.92 * t : 1.055 * t ** (1 / 2.4) - 0.055)))
+      }
+      img.data[4 * i + 3] = 255
+    }
+    readBuf.unmap()
+    for (const t of [color, depth, readBuf]) t.destroy()
+    mapImage = await createImageBitmap(img)
+    return mapImage
+  }
+  let mapImage = null
+
+  const replaceIsland = async (isl, tgts) => {
     setIsland(isl, tgts)
     renderShadowMap()
+    await renderMapImage()
   }
+  await renderMapImage()
 
   return {
     device, hdr, render, setIsland: replaceIsland,
+    get mapImage() { return mapImage },
+    mapProject,
     exposure: () => 2 ** exposureLog2,
     get size() { return size },
   }

@@ -37,3 +37,27 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #overlay h1 { font-size: 44px; color: var(--neon); text-shadow: 0 0 18px var(--neon); letter-spacing: 0.08em; margin: 0 0 12px; }
 #overlay .hint { opacity: 0.8; }
 #overlay[hidden] { display: none; }
+#minimap {
+  position: fixed; right: 16px; bottom: 16px; width: 28vh; height: 28vh;
+  border: 1px solid rgba(95, 244, 255, 0.55); border-radius: 50%; box-shadow: 0 0 18px rgba(95, 244, 255, 0.35);
+  pointer-events: none;
+}
+#settings {
+  margin-top: 18px; padding: 16px 20px; min-width: 420px; text-align: left; cursor: default;
+  background: var(--glass); border: 1px solid rgba(95, 244, 255, 0.45); backdrop-filter: blur(10px);
+}
+#settings .panel-title { color: var(--neon2); letter-spacing: 0.1em; margin-bottom: 8px; text-transform: uppercase; }
+#settings .switches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#settings button {
+  font: inherit; color: #55707a; background: transparent; border: 1px solid #2a4650; padding: 4px 10px; cursor: pointer;
+}
+#settings button.on { color: var(--neon); border-color: var(--neon); text-shadow: 0 0 6px var(--neon); }
+#settings label.slider { display: grid; grid-template-columns: 170px 1fr 80px; align-items: center; gap: 10px; margin: 4px 0; }
+#settings input[type=range] { accent-color: var(--neon); }
+#settings output { color: var(--neon); text-align: right; }
+#hud .gauge { position: absolute; right: 12px; top: 10px; width: 64px; height: 64px; }
+#hud .gauge .arc { transition: stroke 0.2s; }
+#hud .gauge.boosting { animation: pulse 0.5s ease-in-out infinite alternate; }
+#hud .iris { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--neon); vertical-align: middle; margin-left: 6px; }
+@keyframes pulse { from { filter: drop-shadow(0 0 2px var(--neon2)); } to { filter: drop-shadow(0 0 10px var(--neon2)); } }
+#hud { padding-right: 90px; }

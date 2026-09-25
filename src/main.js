@@ -2,6 +2,9 @@ import { createGame, step, viewOf } from './game/index.js'
 import { createRenderer, WebGPUUnavailableError } from './render/renderer.js'
 import { createInput } from './ui/input.js'
 import { createHud } from './ui/hud.js'
+import { createCaptions } from './ui/captions.js'
+import { createMapOverlay } from './ui/mapOverlay.js'
+import { createSettings, settingsFromUrl } from './ui/settings.js'
 import { applyScenario } from './scenarios.js'
 
 const params = new URLSearchParams(location.search)
@@ -31,7 +34,12 @@ async function boot() {
   const freeze = params.get('freeze') === '1'
   if (scenario) applyScenario(state, scenario)
   const input = createInput(canvas, { freeze })
-  const hud = createHud(document.getElementById('hud'))
+  const hud = createHud(document.getElementById('hud'), renderer)
+  const captions = createCaptions(document.getElementById('captions'), state.island)
+  const minimap = createMapOverlay(document.getElementById('minimap'), renderer)
+  const settingsPanel = createSettings(document.getElementById('settings'), input, { devMode })
+  const urlSettings = settingsFromUrl(params)
+  if (urlSettings) input.pushSettings(urlSettings)
   status.textContent = 'Click to play'
   overlay.addEventListener('click', () => input.requestLock())
   document.addEventListener('pointerlockchange', () => { overlay.hidden = input.locked() || freeze })
@@ -47,6 +55,9 @@ async function boot() {
     renderer.render(debug.view ? debug.view(viewOf(state)) : viewOf(state))
     state.flagsDirty.adaptation = false
     hud.update(state)
+    captions.update(state)
+    minimap.update(state)
+    settingsPanel.update(state)
     requestAnimationFrame(frame)
   }
   requestAnimationFrame(frame)

@@ -38,6 +38,7 @@ export function createInput(canvas, { freeze = false } = {}) {
     locked,
     requestLock: () => canvas.requestPointerLock(),
     pushSettings: (patch) => { settings = { ...(settings ?? {}), ...patch } },
+    queueKey: (code) => queued.push(code),
     snapshot() {
       if (freeze) return { moveF: 0, moveR: 0, moveU: 0, boost: false, lookDX: 0, lookDY: 0, fire: false, keys: [], restart: false }
       const snap = {
