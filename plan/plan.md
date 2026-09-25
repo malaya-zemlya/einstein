@@ -314,3 +314,17 @@ None remain. Resolutions from the review walkthrough:
 11. **Best τ versus settings changes:** ignored. Any round counts toward the session best, whatever the settings.
 
 All tunables (cruise, cap, fireball speed, ramp times, volume, HDR headroom, eye adaptation) are adjustable in the Esc settings panel.
+
+## 8. Implementation notes (deltas found while building)
+
+Changes made during implementation, each for a reason discovered in testing:
+
+1. **Band layout is 2 UV + 6 visible + 4 IR, with overlapping widths** (260/355 · 420–680 · 790/960/1300/2000 nm). The original 3/6/3 layout had spectral holes (for example between 800 and 1200 nm). Doppler shifts swept those holes through the visible range as hard rainbow rings. Overlap (σ ≈ half the spacing) makes a flat weight vector a smooth continuum from 230 to 2300 nm. The band count stays at 12 (decision 9).
+2. **The spectral LUTs have 1025 samples** (odd, so "no shift", log₂S = 0, is an exact node). With 256 samples, rest-frame colours were off by up to 4.6% per band.
+3. **Fireballs are 10,000 K plasma** (stylised Y ≈ 200 at rest), and bursts are 6000 K (Y ≈ 60). A fireball always recedes from its shooter at 0.7c (D = 0.42), so a 3000 K fireball looked like a near-black 1260 K ember. At 10,000 K it reads as ~4200 K orange-white when receding and blue-white when approaching, and it blooms. Fireball light on the terrain uses `LIGHT_GAIN = 0.3`.
+4. **Eye adaptation measures the scene before the bloom upsample passes**, because the upsamples add blur into the same mips and inflated the measurement about 4×. Its key value is 0.25 (brighter than photographic 0.18, to suit the cartoon look).
+5. **Per-object `aSrc = C² − |u|²` is computed in double on the CPU and passed to the GPU.** Computed in float32, it loses about 4 digits at 0.9995c. The Doppler factor uses a cancellation-free form of `1 − v·k̂/c` for the same reason (found by the GPU parity tests).
+6. **Low-quality mesh totals are about 390k vertices** (not 245k): the spec's own edge limits need more water and canopy vertices. High quality is 2.52M vertices and builds in about 1.9 s.
+7. **Vertical field of view is 75°.** The vertex stride is 80 bytes, with a `particle` index replacing a per-vertex velocity. Burst particle velocities come from a per-instance storage buffer.
+8. **The JS colour reference lives in `src/spectral/colourReference.js`**, shared by the tests.
+9. **Performance** is measured only in headless Chrome, which is capped at 60 fps: median 15.9 ms at 1728×1117 with 40 fireballs at high quality. The 120 fps target (criterion 20) still needs checking in a real browser on the XDR display.

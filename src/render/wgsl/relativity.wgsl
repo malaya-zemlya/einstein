@@ -16,8 +16,18 @@ fn boostDx(dt: f32, dx: vec3f, v: vec3f, g: f32) -> vec3f {
   return dx + (g - 1.0) * dot(dx, n) * n - g * v * dt;
 }
 
+// 1 − v·k̂/c without cancellation for |v| → c: equals (a + |v×k̂|²) / (c(c + v·k̂)), a = c² − |v|² = c²/γ².
+fn oneMinusBetaK(v: vec3f, kHat: vec3f, a: f32, c: f32) -> f32 {
+  let vk = dot(v, kHat);
+  if (vk <= 0.0) { return 1.0 - vk / c; }
+  let x = cross(v, kHat);
+  return (a + dot(x, x)) / (c * (c + vk));
+}
+
 fn dopplerD(kHat: vec3f, vObs: vec3f, gObs: f32, vSrc: vec3f, gSrc: f32, c: f32) -> f32 {
-  return gObs * (1.0 - dot(vObs, kHat) / c) / (gSrc * (1.0 - dot(vSrc, kHat) / c));
+  let aObs = c * c / (gObs * gObs);
+  let aSrc = c * c / (gSrc * gSrc);
+  return gObs * oneMinusBetaK(vObs, kHat, aObs, c) / (gSrc * oneMinusBetaK(vSrc, kHat, aSrc, c));
 }
 
 struct Apparent { pos: vec3f, D: f32, visible: f32, dxWorld: vec3f, tRel: f32 }
