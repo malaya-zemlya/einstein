@@ -30,9 +30,8 @@ async function boot() {
       : `GPU error: ${err.message}`
     throw err
   }
-  const scenario = params.get('scenario')
-  const freeze = params.get('freeze') === '1'
-  if (scenario) applyScenario(state, scenario)
+  const scenarioName = params.get('scenario')
+  const freeze = params.get('freeze') === '1' || Boolean(scenarioName)
   const input = createInput(canvas, { freeze })
   const hud = createHud(document.getElementById('hud'), renderer)
   const captions = createCaptions(document.getElementById('captions'), state.island)
@@ -46,6 +45,20 @@ async function boot() {
   if (freeze) overlay.hidden = true
 
   const debug = { pause: false, view: null, input: null }
+  if (scenarioName) {
+    const fireAt = (yaw) => {
+      const keep = state.player.yaw
+      state.player.yaw = yaw
+      state.lastFireTau = -Infinity
+      step(state, { fire: true, keys: [] }, 1e-6)
+      state.player.yaw = keep
+    }
+    const sc = applyScenario(state, scenarioName, fireAt)
+    if (sc) {
+      debug.view = sc.view
+      debug.pause = !sc.live
+    }
+  }
   let last = performance.now()
   const frame = (now) => {
     const dReal = Math.min((now - last) / 1000, 1 / 30)
