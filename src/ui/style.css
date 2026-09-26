@@ -68,3 +68,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #replaybar .badge { color: var(--neon2); font-weight: bold; letter-spacing: 0.15em; text-shadow: 0 0 8px var(--neon2); }
 #replaybar .scrub { width: 320px; accent-color: var(--neon2); }
 body.replaying #hud { display: none; }
+#replaybar[hidden], #minimap[hidden] { display: none; }

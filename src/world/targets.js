@@ -68,7 +68,8 @@ export function makeTargetGeometry(colour, maxEdge, bandsFor = materialBands) {
 
 // Fireball: icosphere r 0.3, emitting at FIREBALL_TEMP, zero albedo.
 export function makeFireballGeometry(quality = 'high') {
-  return sphere(FIREBALL_RADIUS, qualityOf(quality).propEdge, { emit: FIREBALL_TEMP, minFreq: 4 })
+  // dense enough for the flame shader's puffy surface and tail (vertex displacement)
+  return sphere(FIREBALL_RADIUS, qualityOf(quality).propEdge, { emit: FIREBALL_TEMP, minFreq: quality === 'low' ? 12 : 20 })
 }
 
 // Burst: 16 small emitting icospheres, all at the origin; `particle` tags each one (0–15).

@@ -7,6 +7,7 @@ import presentWgsl from './wgsl/present.wgsl?raw'
 import bloomWgsl from './wgsl/bloom.wgsl?raw'
 import adaptWgsl from './wgsl/adapt.wgsl?raw'
 import shadowWgsl from './wgsl/shadow.wgsl?raw'
+import fireWgsl from './wgsl/fire.wgsl?raw'
 import { C } from '../physics/constants.js'
 import { dot, sub, lengthSq } from '../math/vec3.js'
 import { lookDirection } from '../math/orient.js'
@@ -132,6 +133,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     return m
   }
   const objectModule = module(commonWgsl + relativityWgsl + lightingWgsl + objectWgsl, 'object')
+  const fireModule = module(commonWgsl + relativityWgsl + lightingWgsl + objectWgsl + fireWgsl, 'fire')
   const skyModule = module(commonWgsl + relativityWgsl + skyWgsl, 'sky')
   const presentModule = module(presentWgsl, 'present')
   const bloomModule = module(bloomWgsl, 'bloom')
@@ -156,6 +158,15 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     fragment: { module: objectModule, entryPoint: 'fs', targets: [{ format: HDR_FORMAT }] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
     depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
+    multisample: { count: MSAA },
+  })
+  const additive = { color: { srcFactor: 'one', dstFactor: 'one' }, alpha: { srcFactor: 'one', dstFactor: 'one' } }
+  const firePipeline = device.createRenderPipeline({
+    layout: scenePipelineLayout,
+    vertex: { module: fireModule, entryPoint: 'vs_fire', buffers: [vertexLayout] },
+    fragment: { module: fireModule, entryPoint: 'fs_fire', targets: [{ format: HDR_FORMAT, blend: additive }] },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'greater' },
     multisample: { count: MSAA },
   })
   const mapPipeline = device.createRenderPipeline({
@@ -442,7 +453,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     const fireballs = view.objects.filter((o) => o.kind === 'fireball')
     const fbBase = next
     for (const f of fireballs) writeObject(next++, f, tObs, NO_BURST)
-    if (fireballs.length) draws.push([fireballMesh, fbBase, fireballs.length])
+    const fireDraw = fireballs.length ? [fireballMesh, fbBase, fireballs.length] : null
     const nLights = writeLights(fireballs, tObs, observer.pos)
     const bursts = view.objects.filter((o) => o.kind === 'burst').slice(0, MAX_BURST_VELS / 16)
     const bBase = next
@@ -469,6 +480,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     fd[55] = 1 / Math.sqrt(1 - dot(observer.vel, observer.vel) / (C * C))
     const fl = view.flags
     fd.set([fl.aberration ? 1 : 0, fl.delay ? 1 : 0, fl.doppler ? 1 : 0, fl.searchlight ? 1 : 0], 60)
+    fd[107] = view.worldTime % 1000
     fu[104] = nLights
     fu[105] = targetsObj.filter((t) => targetMeshes.has(t.id)).length
     device.queue.writeBuffer(frameBuf, 0, frameData)
@@ -498,6 +510,13 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
       pass.drawIndexed(mesh.count, 1, 0, 0, 0)
     }
     for (const [mesh, first, count] of draws) {
+      pass.setVertexBuffer(0, mesh.vbuf)
+      pass.setIndexBuffer(mesh.ibuf, 'uint32')
+      pass.drawIndexed(mesh.count, count, 0, 0, first)
+    }
+    if (fireDraw) {
+      const [mesh, first, count] = fireDraw
+      pass.setPipeline(firePipeline)
       pass.setVertexBuffer(0, mesh.vbuf)
       pass.setIndexBuffer(mesh.ibuf, 'uint32')
       pass.drawIndexed(mesh.count, count, 0, 0, first)

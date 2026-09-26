@@ -12,7 +12,7 @@ struct Frame {
   skyBands: array<vec4f, 3>,
   hazeBands: array<vec4f, 3>,
   ambGround: f32, thermalT: f32, thermalEps: f32, sunDiskScale: f32,
-  nLights: u32, nTargets: u32, shadowOn: u32, pad0: u32,
+  nLights: u32, nTargets: u32, shadowOn: u32, fireTime: f32,   // fireTime: wrapped world time for flame animation
   shadowViewProj: mat4x4f,
 }
 
