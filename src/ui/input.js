@@ -49,7 +49,7 @@ export function createInput(canvas, { freeze = false } = {}) {
         boost: held.has('ShiftLeft') || held.has('ShiftRight'),
         lookDX,
         lookDY,
-        fire: mouseDown && locked(),
+        fire: (mouseDown && locked()) || held.has('Space'), // Space fires in play (pauses in replay)
         keys: queued.splice(0),
         restart,
         settings,
