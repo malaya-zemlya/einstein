@@ -15,5 +15,6 @@ export function viewOf(state) {
     objects,
     avatar: null,
     boost: player.boosting,
+    clockStart: state.clockStart,
   }
 }

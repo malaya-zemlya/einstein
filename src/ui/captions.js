@@ -33,6 +33,12 @@ const RULES = [
   { id: 'sonic', event: (e) => e.type === 'sonic',
     text: () => [`You just passed the speed of sound (${fmt(C_SOUND, 0)} m/s here). Sounds from behind can't catch you now.`,
       'Your sonic boom trails behind you as a cone (see the map). You never hear your own.'] },
+  { id: 'clockahead', when: (s) => s.worldTime - s.player.tau > 3,
+    text: () => ['The clock tower keeps island time; your watch keeps your own (proper) time.',
+      'Every boost puts the island further ahead: Δt = ∫(γ − 1) dτ. That lost time never comes back.'] },
+  { id: 'clockdoppler', when: (s, b) => b > 0.5 && s.flags.doppler && s.flags.delay,
+    text: () => ['Watch the tower clock while you fly: approaching, its hands race; receding, they crawl.',
+      'That is Doppler (light delay changing). Stop and compare with your watch: what remains is time dilation.'] },
   { id: 'twins', event: (e) => e.type === 'roundFinished',
     text: (e) => [`Your clock: ${fmt(e.tau)} s. The island's clock: ${fmt(e.world)} s. Moving fast, you aged less.${e.record ? '  ★ New record!' : ''}`] },
 ]

@@ -9,6 +9,7 @@ export function flatIsland({ slope = 0, shore = 85 } = {}) {
     normalAt: () => vec3(n.x / l, n.y / l, n.z / l),
     materialAt: () => 'grass',
     SHORE_RADIUS: shore,
+    spawn: { x: 0, z: 0 },
   }
 }
 

@@ -1,5 +1,6 @@
 import { vec3, fromArray } from '../math/vec3.js'
 import { Worldline } from '../physics/worldline.js'
+import { SPAWN_POS } from '../world/props.js'
 
 export const DEFAULT_SETTINGS = Object.freeze({
   cruiseBeta: 0.4,
@@ -35,8 +36,9 @@ const makeTarget = (spec) => ({
 })
 
 export function spawnPlayer(island, settings) {
+  const { x, z } = island.spawn ?? SPAWN_POS
   return {
-    pos: vec3(0, island.heightAt(0, 0) + settings.eyeHeight, 0),
+    pos: vec3(x, island.heightAt(x, z) + settings.eyeHeight, z),
     vel: vec3(),
     rapidity: vec3(),
     yaw: 0, // facing +z
@@ -53,6 +55,7 @@ export function createGameState({ island, targets, settings = {} }) {
     targetSpecs: targets,
     player: spawnPlayer(island, s),
     worldTime: 0,
+    clockStart: Date.now(), // wall-clock epoch ms at τ = t = 0: the tower and your watch both start here
     flags: { aberration: true, delay: true, doppler: true, searchlight: true },
     ui: { map: true, captions: true, frameTime: false, sound: true },
     settings: s,

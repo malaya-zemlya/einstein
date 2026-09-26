@@ -94,6 +94,7 @@ export function createRecorder(seed, island, { shapeHash = worldShapeHash, now =
     if (first) {
       meta.c = C
       meta.settings = { ...state.settings }
+      meta.clockStart = state.clockStart ?? null
       meta.createdAt = now().toISOString()
       flagChanges.push({ t: 0, flags: pickFlags(state.flags) })
       state.targets.forEach((tg) => register(tg.id, 'target', tg.line, { specIndex: state.targetSpecs.indexOf(tg.spec) }))

@@ -5,6 +5,7 @@ export const TREE_COUNT = 120
 export const ROCK_COUNT = 60
 export const PROP_SPACING = 5
 export const SPAWN_CLEAR = 8
+export const SPAWN_POS = Object.freeze({ x: 0, z: -14 }) // facing the clock tower at the centre
 export const TREE_KINDS = Object.freeze(['round', 'pine', 'cherry'])
 
 // Quality-independent prop transforms: Poisson-disc (dart throwing) on grass, 5 m apart,
@@ -21,7 +22,8 @@ export function placePropSites(seed, field) {
     const r = R * Math.sqrt(rand())
     const x = r * Math.cos(a)
     const z = r * Math.sin(a)
-    if (r < SPAWN_CLEAR) continue
+    if (r < SPAWN_CLEAR) continue // clock tower
+    if (Math.hypot(x - SPAWN_POS.x, z - SPAWN_POS.z) < SPAWN_CLEAR) continue
     if (pts.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < PROP_SPACING * PROP_SPACING)) continue
     if (field.materialAt(x, z) !== 'grass') continue
     pts.push({ x, z })

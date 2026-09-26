@@ -55,6 +55,7 @@ export function resetRound(state) {
   state.hits = []
   state.player = spawnPlayer(state.island, state.settings)
   state.worldTime = 0
+  state.clockStart = Date.now()
   state.lastFireTau = -Infinity
   state.round = { status: 'ready', startTau: 0, startWorld: 0, endTau: 0, endWorld: 0, score: 0, best: state.round.best }
   state.flagsDirty.adaptation = true

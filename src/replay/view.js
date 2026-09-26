@@ -53,6 +53,7 @@ export function viewAt(rs) {
     objects,
     avatar,
     boost,
+    clockStart: rs.log.meta.clockStart ?? Date.parse(rs.log.meta.createdAt),
   }
 }
 

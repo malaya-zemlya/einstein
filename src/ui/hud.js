@@ -1,10 +1,25 @@
 import { C } from '../physics/constants.js'
 import { length } from '../math/vec3.js'
+import { clockSeconds, formatClock, towerTimeSeen } from '../world/clocktower.js'
 
 const fmt = (x, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : '—')
 const effect = (key, name, on) => `<span class="${on ? 'on' : 'off'}">[${key}] ${name} ${on ? '●' : '○'}</span>`
 
 const RING = 2 * Math.PI * 26
+
+// Your watch (proper time) vs the tower face you can see best (island time, as its light shows it).
+function clockLine(state) {
+  const faces = state.island.clockTower?.faces
+  if (!faces) return ''
+  const p = state.player.pos
+  const face = faces.reduce((best, f) => {
+    const s = f.normal[0] * (p.x - f.centre[0]) + f.normal[1] * (p.y - f.centre[1]) + f.normal[2] * (p.z - f.centre[2])
+    return s > best.s ? { f, s } : best
+  }, { f: faces[0], s: -Infinity }).f
+  const seen = towerTimeSeen(face.centre, p, state.worldTime, state.flags.delay)
+  const ahead = state.worldTime - state.player.tau
+  return `⌚ You ${formatClock(clockSeconds(state.clockStart, state.player.tau))} &nbsp; 🕰 Tower (seen) ${formatClock(clockSeconds(state.clockStart, seen))} &nbsp; island ahead <span class="${ahead > 0.05 ? 'boost' : ''}">+${ahead.toFixed(1)} s</span>`
+}
 
 function gauge(gamma, boosting) {
   const f = Math.min(1, Math.log10(gamma)) // γ from 1 to 10 on a log scale
@@ -39,6 +54,7 @@ export function createHud(root, renderer) {
         `τ (you) ${fmt(player.tau)} s &nbsp; t (island) ${fmt(state.worldTime)} s`,
         `Targets ${round.score}/${n} &nbsp; Round τ ${round.status === 'ready' ? '—' : fmt(roundTau)} s / t ${round.status === 'ready' ? '—' : fmt(roundT)} s &nbsp; Best τ ${round.best === null ? '—' : fmt(round.best)} s`,
         [effect(1, 'Aberration', flags.aberration), effect(2, 'Light delay', flags.delay), effect(3, 'Doppler', flags.doppler), effect(4, 'Searchlight', flags.searchlight)].join(' '),
+        clockLine(state),
         `Eye <span class="iris" style="transform: scale(${Math.min(2, Math.max(0.3, Math.sqrt(renderer?.exposure?.() ?? 0.8) * 1.1)).toFixed(2)})"></span>${ui.sound ? '' : ' &nbsp; 🔇'}`,
         ui.frameTime ? `${fmt(frameMs, 1)} ms` : '',
       ].filter(Boolean).join('<br>')

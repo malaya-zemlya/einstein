@@ -3,10 +3,12 @@ import { MeshBuilder, qualityOf, stitch } from './geometry.js'
 import { fbm, noise2D } from './noise.js'
 import { BALLOON_COLOURS, materialBands } from './palette.js'
 import { buildProps, placePropSites } from './props.js'
+import { buildClockTower } from './clocktower.js'
+import { mergeSpecs } from './geometry.js'
 import { placeTargetSites } from './targets.js'
 
 // Bump whenever any output for a given seed would change.
-export const GENERATOR_VERSION = 1
+export const GENERATOR_VERSION = 2 // 2: clock tower at the centre, spawn moved south
 
 export const R = 90
 export const SHORE_RADIUS = 85
@@ -51,13 +53,15 @@ export function buildIsland(seed, quality = 'high', { bandsFor = materialBands }
   const q = qualityOf(quality)
   const field = heightField(seed)
   const propSites = placePropSites(seed, field)
+  const tower = buildClockTower(field.heightAt, quality, bandsFor)
   return {
     ...field,
     quality,
     propSites,
+    clockTower: { faces: tower.faces, ground: tower.ground },
     terrain: buildTerrain(field, q.terrainSpacing, bandsFor),
     water: buildWater(q.waterEdge, bandsFor),
-    props: buildProps(seed, propSites, q.propEdge, bandsFor),
+    props: mergeSpecs([buildProps(seed, propSites, q.propEdge, bandsFor), tower.spec]),
   }
 }
 

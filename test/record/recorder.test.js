@@ -1,3 +1,4 @@
+import { GENERATOR_VERSION } from '../../src/world/island.js'
 import { describe, it, expect } from 'vitest'
 import { createRecorder } from '../../src/record/recorder.js'
 import { readLog, frameAt, frameAtTau, tauToT, tToTau } from '../../src/record/reader.js'
@@ -74,7 +75,7 @@ describe('recorder', () => {
     const { game, rec, tick } = recordedGame({ settings: { cruiseBeta: 0.3 } })
     tick({ moveF: 1, lookDX: 123 }, DT)
     const log = rec.exportLog()
-    expect(log.meta).toMatchObject({ format: 'einstein-spacetime', version: 1, seed: SEED, generatorVersion: 1, geometryHash: fakeHash(SEED), c: 20 })
+    expect(log.meta).toMatchObject({ format: 'einstein-spacetime', version: 1, seed: SEED, generatorVersion: GENERATOR_VERSION, geometryHash: fakeHash(SEED), c: 20 })
     expect(log.meta.settings.cruiseBeta).toBe(0.3)
     expect(Number.isNaN(Date.parse(log.meta.createdAt))).toBe(false)
     expect(log.frames.pos[2]).toBe(Math.round(game.player.pos.z * 1e5) / 1e5)

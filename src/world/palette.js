@@ -14,6 +14,13 @@ export const PALETTE = Object.freeze({
   balloonBlue: { rgb: '#4d96ff', uv: 0.1, ir: 0.3 },
   stick: { rgb: '#f5f5f5', uv: 0.3, ir: 0.6 },
   seaHaze: { rgb: '#9fc4d8', uv: 0.2, ir: 0.1 },
+  towerStone: { rgb: '#eadfc8', uv: 0.3, ir: 0.6 },
+  towerTrim: { rgb: '#b89b72', uv: 0.2, ir: 0.55 },
+  towerRoof: { rgb: '#e0645c', uv: 0.1, ir: 0.4 },
+  towerGold: { rgb: '#f2c14e', uv: 0.1, ir: 0.7 },
+  clockFace: { rgb: '#fbf6e8', uv: 0.35, ir: 0.6 },
+  clockHand: { rgb: '#26262e', uv: 0.05, ir: 0.1 },
+  clockSecond: { rgb: '#e63946', uv: 0.05, ir: 0.3 },
 })
 
 export const BALLOON_COLOURS = Object.freeze(['balloonRed', 'balloonYellow', 'balloonBlue'])

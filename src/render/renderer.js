@@ -19,6 +19,7 @@ import {
 import { rgbToBands } from '../spectral/rgb.js'
 import { PALETTE } from '../world/palette.js'
 import { makeFireballGeometry, makeBurstGeometry } from '../world/targets.js'
+import { clockHands, clockSeconds, towerTimeSeen } from '../world/clocktower.js'
 
 const MSAA = 4
 const HDR_FORMAT = 'rgba16float'
@@ -227,7 +228,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
   })
 
   // --- geometry ---
-  const uploadMesh = (spec) => {
+  const uploadMesh = (spec, dynamic = false) => {
     const n = spec.positions.length / 3
     const buf = new ArrayBuffer(n * VERTEX_STRIDE)
     const f = new Float32Array(buf)
@@ -251,14 +252,46 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     }
     const vbuf = device.createBuffer({ size: buf.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     device.queue.writeBuffer(vbuf, 0, buf)
+    if (dynamic) return { vbuf, ibuf: null, count: spec.indices.length, spec, destroy: () => vbuf.destroy(), ...indexBuffer(spec) }
+    const { ibuf } = indexBuffer(spec)
+    return { vbuf, ibuf, count: spec.indices.length, destroy: () => { vbuf.destroy(); ibuf.destroy() } }
+  }
+  const indexBuffer = (spec) => {
     const ibuf = device.createBuffer({ size: spec.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST })
     device.queue.writeBuffer(ibuf, 0, spec.indices)
-    return { vbuf, ibuf, count: spec.indices.length, destroy: () => { vbuf.destroy(); ibuf.destroy() } }
+    return { ibuf }
+  }
+  // Clock hands: same topology every frame, only positions/normals change (hands rotate).
+  const updateHands = (view) => {
+    if (!handsMesh) return
+    const obs = view.observer.pos
+    const secs = towerFaces.map((f) => clockSeconds(view.clockStart ?? Date.now(), towerTimeSeen(f.centre, obs, view.worldTime, view.flags.delay)))
+    const spec = clockHands(towerFaces, secs)
+    const n = spec.positions.length / 3
+    const f = new Float32Array(n * (VERTEX_STRIDE / 4))
+    const u = new Uint32Array(f.buffer)
+    const w = VERTEX_STRIDE / 4
+    for (let i = 0; i < n; i++) {
+      const o = i * w
+      f.set(spec.positions.subarray(3 * i, 3 * i + 3), o)
+      f.set(spec.normals.subarray(3 * i, 3 * i + 3), o + 3)
+      f.set(spec.bands0.subarray(4 * i, 4 * i + 4), o + 6)
+      f.set(spec.bands1.subarray(4 * i, 4 * i + 4), o + 10)
+      f.set(spec.bands2.subarray(4 * i, 4 * i + 4), o + 14)
+      f[o + 18] = 0
+      u[o + 19] = 0
+    }
+    device.queue.writeBuffer(handsMesh.vbuf, 0, f)
   }
 
   let staticMeshes = []
   let targetMeshes = new Map()
+  let towerFaces = null
+  let handsMesh = null
   const setIsland = (isl, tgts) => {
+    towerFaces = isl.clockTower?.faces ?? null
+    handsMesh?.destroy()
+    handsMesh = towerFaces ? uploadMesh(clockHands(towerFaces, towerFaces.map(() => 0)), true) : null
     for (const m of staticMeshes) m.destroy()
     for (const m of targetMeshes.values()) m.destroy()
     staticMeshes = [isl.terrain, isl.water, isl.props].filter(Boolean).map(uploadMesh)
@@ -495,6 +528,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     device.queue.writeBuffer(presentBuf, 0, new Float32Array([0.8, headroom, hdr ? 0 : 1, 0.15 + 0.2 * kick, ...shake, adaptOn ? 1 : 0, BLOOM_STRENGTH]))
     device.queue.writeBuffer(adaptParamBuf, 0, new Float32Array([dReal, view.resetAdaptation ? 1 : 0, size[0] / size[1], 0]))
 
+    updateHands(view)
     const encoder = device.createCommandEncoder()
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view: msaaTex.createView(), resolveTarget: hdrTex.createView(), loadOp: 'clear', storeOp: 'discard', clearValue: [0, 0, 0, 1] }],
@@ -504,7 +538,7 @@ export async function createRenderer(canvas, island, { quality = 'high', targets
     pass.setPipeline(skyPipeline)
     pass.draw(3)
     pass.setPipeline(objectPipeline)
-    for (const mesh of staticMeshes) {
+    for (const mesh of handsMesh ? [...staticMeshes, handsMesh] : staticMeshes) {
       pass.setVertexBuffer(0, mesh.vbuf)
       pass.setIndexBuffer(mesh.ibuf, 'uint32')
       pass.drawIndexed(mesh.count, 1, 0, 0, 0)

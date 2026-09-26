@@ -10,7 +10,7 @@ const count = (s) => s.emitTemp.length
 describe('island', () => {
   it('exports the interface', () => {
     const isl = island(1)
-    expect(GENERATOR_VERSION).toBe(1)
+    expect(GENERATOR_VERSION).toBe(2)
     expect(isl.SHORE_RADIUS).toBe(SHORE_RADIUS)
     expect(SHORE_RADIUS).toBe(85)
     expect(isl.R).toBe(R)
