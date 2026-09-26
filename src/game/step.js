@@ -9,6 +9,7 @@ import { startRoundIfNeeded, updateHitVisibility } from './round.js'
 const FLAG_KEYS = { Digit1: 'aberration', Digit2: 'delay', Digit3: 'doppler', Digit4: 'searchlight' }
 const UI_KEYS = { KeyM: 'map', KeyH: 'captions', KeyF: 'frameTime', KeyV: 'sound' }
 const PITCH_LIMIT = (85 * Math.PI) / 180
+const TURN_RATE = 2.2 // rad/s of proper time for arrow-key turning
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x))
 
 function mergeSettings(state, patch, devMode) {
@@ -71,7 +72,7 @@ export function step(state, input, dTauRaw, { devMode = false } = {}) {
     return
   }
   const { player, settings } = state
-  player.yaw -= (input.lookDX || 0) * settings.lookSens
+  player.yaw -= (input.lookDX || 0) * settings.lookSens + (input.turn || 0) * TURN_RATE * dTau
   player.pitch = clamp(player.pitch - (input.lookDY || 0) * settings.lookSens, -PITCH_LIMIT, PITCH_LIMIT)
 
   const { dt, wish } = movePlayer(state, input, dTau)

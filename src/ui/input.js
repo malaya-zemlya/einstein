@@ -40,9 +40,10 @@ export function createInput(canvas, { freeze = false } = {}) {
     pushSettings: (patch) => { settings = { ...(settings ?? {}), ...patch } },
     queueKey: (code) => queued.push(code),
     snapshot() {
-      if (freeze) return { moveF: 0, moveR: 0, moveU: 0, boost: false, lookDX: 0, lookDY: 0, fire: false, keys: [], restart: false }
+      if (freeze) return { moveF: 0, moveR: 0, moveU: 0, turn: 0, boost: false, lookDX: 0, lookDY: 0, fire: false, keys: [], restart: false }
       const snap = {
-        moveF: axis('KeyW', 'KeyS'),
+        moveF: Math.max(-1, Math.min(1, axis('KeyW', 'KeyS') + axis('ArrowUp', 'ArrowDown'))),
+        turn: axis('ArrowRight', 'ArrowLeft'), // arrow-key steering, radians/s scaled in step
         moveR: axis('KeyD', 'KeyA'),
         moveU: axis('KeyE', 'KeyQ'),
         boost: held.has('ShiftLeft') || held.has('ShiftRight'),

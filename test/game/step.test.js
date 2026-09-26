@@ -179,3 +179,14 @@ describe('toggles and round', () => {
     expect(g.round.status).toBe('finished')
   })
 })
+
+describe('arrow keys', () => {
+  it('↑ moves forward and → turns right (yaw decreases, like mouse right)', () => {
+    const g = makeGame({ shore: 1e6 })
+    for (let i = 0; i < 60; i++) step(g, { ...idle(), moveF: 1 }, DT)
+    expect(g.player.pos.z).toBeGreaterThan(0)
+    const yaw0 = g.player.yaw
+    for (let i = 0; i < 30; i++) step(g, { ...idle(), turn: 1 }, DT)
+    expect(g.player.yaw).toBeCloseTo(yaw0 - 2.2 * 0.5, 6)
+  })
+})

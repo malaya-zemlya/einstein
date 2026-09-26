@@ -14,7 +14,7 @@ npm test           # unit tests (Node)
 npm run test:gpu   # WGSL parity tests in headless Chrome (needs WebGPU)
 ```
 
-Controls: WASD move · Shift boost · mouse look · click fire · 1–4 toggle aberration / light delay /
+Controls: WASD or ↑/↓ move · ←/→ turn · Shift boost · mouse look · click fire · 1–4 toggle aberration / light delay /
 Doppler / searchlight · N Newtonian view · M map · H captions · V sound · R restart · K save recording ·
 L load recording · Esc settings.
 
